@@ -1,0 +1,31 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      # Persist SQLite databases and screenshots across container recycles
+      - ./database:/workspace/database
+      - ./screenshots:/workspace/screenshots
+    environment:
+      - PORT=8000
+      - SECRET_KEY=09d25e094faa6ca2556c818166b7a9563b93f7099f6f0f4caa6cf63b88e8d3e7
+      # Default empty OpenAI Key, override with local system shell environments
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+    restart: unless-stopped
+
+  frontend:
+    image: node:18-alpine
+    working_dir: /workspace
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/workspace
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
+    depends_on:
+      - backend
+    restart: unless-stopped
