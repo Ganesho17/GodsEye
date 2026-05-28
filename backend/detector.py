@@ -441,16 +441,28 @@ class IntelligentDetector:
                 incident_type = 'INTRUSION'
                 description   = "HIGH RISK BREACH: Threat score threshold exceeded."
                 explanation   = f"Multiple threat factors active: {', '.join(behaviors.get('triggers', []))}."
-        elif level == 'MEDIUM':
-            if len(behaviors['unattended_items']) > 0:
+        elif level in ('MEDIUM', 'LOW'):
+            if len(behaviors.get('intruder_ids', [])) > 0:
+                incident_type = 'INTRUSION'
+                description   = f"RESTRICTED AREA INTRUSION: {len(behaviors['intruder_ids'])} suspect(s) breached secure perimeter."
+                explanation   = f"Person(s) detected inside the restricted zone. Track IDs: {behaviors['intruder_ids']}."
+            elif len(behaviors.get('unattended_items', [])) > 0:
                 incident_type = 'UNATTENDED_OBJECT'
                 item_names    = list(set(item['class'] for item in behaviors['unattended_items']))
                 description   = f"UNATTENDED OBJECT(S) DETECTED: {', '.join(item_names)} in secure zone."
                 explanation   = "Objects left unattended in the restricted area. Possible abandoned item threat."
-            elif behaviors['current_person_count'] > pipeline.crowd_threshold:
+            elif behaviors.get('current_person_count', 0) > pipeline.crowd_threshold:
                 incident_type = 'CROWD_ALERT'
                 description   = f"CROWD COUNT EXCEEDED: {behaviors['current_person_count']} persons (max: {pipeline.crowd_threshold})."
                 explanation   = f"Current occupancy ({behaviors['current_person_count']}) exceeds configured limit ({pipeline.crowd_threshold})."
+            elif len(behaviors.get('running_ids', [])) > 0:
+                incident_type = 'SUSPICIOUS_BEHAVIOR'
+                description   = f"SUSPICIOUS BEHAVIOR: Fast movement / running detected."
+                explanation   = f"Person(s) running abnormally fast. Track IDs: {behaviors['running_ids']}."
+            elif len(behaviors.get('loitering_ids', [])) > 0:
+                incident_type = 'SUSPICIOUS_BEHAVIOR'
+                description   = f"SUSPICIOUS BEHAVIOR: Loitering detected."
+                explanation   = f"Person(s) loitering in area. Track IDs: {behaviors['loitering_ids']}."
 
         if incident_type and (current_time - pipeline.last_alert_times.get(incident_type, 0) > pipeline.alert_cooldowns.get(incident_type, 5.0)):
             pipeline.last_alert_times[incident_type] = current_time
@@ -480,8 +492,8 @@ class IntelligentDetector:
 
             db_record['description']   = description
             db_record['summary']       = explanation
-            db_record['snapshot']      = f"/screenshots/raw/{os.path.basename(raw_path)}"       if raw_path       else None
-            db_record['annotated_url'] = f"/screenshots/annotated/{os.path.basename(annotated_path)}" if annotated_path else None
+            db_record['snapshot']      = f"/api/screenshots/raw/{os.path.basename(raw_path)}"       if raw_path       else None
+            db_record['annotated_url'] = f"/api/screenshots/annotated/{os.path.basename(annotated_path)}" if annotated_path else None
 
             pipeline.push_sse_alert(db_record)
 

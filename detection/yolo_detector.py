@@ -101,7 +101,12 @@ class YoloDetector:
     }
 
     def __init__(self, model_path="models/yolov8s.pt"):
-        self.model_path   = model_path
+        import os
+        if not os.path.isabs(model_path):
+            base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+            self.model_path = os.path.join(base_dir, model_path)
+        else:
+            self.model_path = model_path
         self.model        = None
         self.model_loaded = False
         self.lock         = threading.Lock()

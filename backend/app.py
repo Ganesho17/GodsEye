@@ -52,10 +52,7 @@ os.makedirs(os.path.join(SCREENSHOTS_DIR, 'annotated'), exist_ok=True)
 def index():
     return app.send_static_file('index.html')
 
-@app.route('/screenshots/<path:filename>')
-def serve_screenshot(filename):
-    """Serves raw or annotated screenshots by relative path (supports subdirs)."""
-    return send_from_directory(SCREENSHOTS_DIR, filename)
+
 
 
 # -----------------------------------------------------------------------
@@ -385,15 +382,22 @@ def auth_me():
 # Helper: Enrich log records with descriptions and URLs
 # -----------------------------------------------------------------------
 
+@app.route('/api/screenshots/<path:filename>')
+def serve_screenshot(filename):
+    """Serves raw or annotated screenshots by relative path (supports subdirs)."""
+    return send_from_directory(SCREENSHOTS_DIR, filename)
+
 def _enrich_logs(logs):
     """In-place enrichment of log records with UI-ready fields."""
     for log in logs:
         if log.get('annotated_path'):
-            log['screenshot_path'] = f"/screenshots/annotated/{log['annotated_path']}"
+            log['screenshot_path'] = f"/api/screenshots/annotated/{log['annotated_path']}"
         elif log.get('screenshot'):
-            log['screenshot_path'] = f"/screenshots/raw/{log['screenshot']}"
+            log['screenshot_path'] = f"/api/screenshots/raw/{log['screenshot']}"
         else:
             log['screenshot_path'] = None
+            
+        log['snapshot'] = log['screenshot_path']
 
         itype  = log.get('incident_type', '')
         level  = log.get('threat_level', '')
