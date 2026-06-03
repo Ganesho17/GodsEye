@@ -135,6 +135,13 @@ function App() {
   const [streamActive, setStreamActive] = useState(true);
   const [modalLog, setModalLog] = useState(null); // For snapshot zoom modal
 
+  // Mobile camera features states
+  const [cameras, setCameras] = useState([{ id: 'cam_0', name: 'Primary Webcam', type: 'webcam', is_active: true }]);
+  const [selectedCameraId, setSelectedCameraId] = useState('cam_0');
+  const [phoneModalOpen, setPhoneModalOpen] = useState(false);
+  const [phoneModalId, setPhoneModalId] = useState(null);
+  const [phoneModalActive, setPhoneModalActive] = useState(false);
+
   const soundEnabledRef = useRef(soundEnabled);
   
   useEffect(() => {
@@ -142,8 +149,8 @@ function App() {
   }, [soundEnabled]);
 
   // Fetch initial statistics and configure interval polling
-  const fetchStats = () => {
-    fetch(`${API_BASE}/api/stats`)
+  const fetchStats = (camId = selectedCameraId) => {
+    fetch(`${API_BASE}/api/cameras/${camId}/stats`)
       .then(res => res.json())
       .then(data => {
         setStats(data);
@@ -158,24 +165,38 @@ function App() {
       .catch(err => console.error("Error fetching incident history:", err));
   };
 
+  const fetchCameras = () => {
+    fetch(`${API_BASE}/api/cameras`)
+      .then(res => res.json())
+      .then(data => {
+        setCameras(data);
+      })
+      .catch(err => console.error("Error fetching cameras:", err));
+  };
+
   useEffect(() => {
-    fetchStats();
+    fetchStats(selectedCameraId);
     fetchLogs();
+    fetchCameras();
     
     const interval = setInterval(() => {
-      fetchStats();
+      fetchStats(selectedCameraId);
+      // Poll cameras occasionally to keep active status indicator fresh
+      if (Math.random() < 0.35) {
+        fetchCameras();
+      }
     }, 1200); // 1.2s polling for HUD stats
 
     return () => clearInterval(interval);
-  }, []);
+  }, [selectedCameraId]);
 
   // Establish SSE Real-Time Alert connection
   useEffect(() => {
     let eventSource;
     
     const connectSSE = () => {
-      console.log("Surveillance Client: Initializing alarm stream connection...");
-      eventSource = new EventSource(`${API_BASE}/api/alerts/stream`);
+      console.log(`Surveillance Client: Initializing alarm stream connection for ${selectedCameraId}...`);
+      eventSource = new EventSource(`${API_BASE}/api/cameras/${selectedCameraId}/alerts/stream`);
       
       eventSource.onmessage = (event) => {
         try {
@@ -217,18 +238,18 @@ function App() {
     return () => {
       if (eventSource) eventSource.close();
     };
-  }, []);
+  }, [selectedCameraId]);
 
   const toggleCameraMode = () => {
     const updatedWebcamState = !stats.use_webcam;
-    fetch(`${API_BASE}/api/settings`, {
-      method: 'POST',
+    fetch(`${API_BASE}/api/cameras/${selectedCameraId}`, {
+      method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ use_webcam: updatedWebcamState })
     })
       .then(res => res.json())
       .then(data => {
-        fetchStats();
+        fetchStats(selectedCameraId);
         // Give webcam 1s to load, restart stream frame
         setStreamActive(false);
         setTimeout(() => setStreamActive(true), 1000);
@@ -237,48 +258,92 @@ function App() {
   };
 
   const handleSliderChange = (newThreshold) => {
-    fetch(`${API_BASE}/api/settings`, {
-      method: 'POST',
+    fetch(`${API_BASE}/api/cameras/${selectedCameraId}`, {
+      method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ crowd_threshold: parseInt(newThreshold) })
     })
       .then(res => res.json())
-      .then(() => fetchStats())
+      .then(() => fetchStats(selectedCameraId))
       .catch(err => console.error("Error saving threshold:", err));
   };
 
   const handleLoiteringThresholdChange = (newLimit) => {
-    fetch(`${API_BASE}/api/settings`, {
-      method: 'POST',
+    fetch(`${API_BASE}/api/cameras/${selectedCameraId}`, {
+      method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ loitering_threshold: parseFloat(newLimit) })
     })
       .then(res => res.json())
-      .then(() => fetchStats())
+      .then(() => fetchStats(selectedCameraId))
       .catch(err => console.error("Error saving loitering threshold:", err));
   };
 
   const handlePeakHoursChange = (field, val) => {
-    fetch(`${API_BASE}/api/settings`, {
-      method: 'POST',
+    fetch(`${API_BASE}/api/cameras/${selectedCameraId}`, {
+      method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ [field]: parseInt(val) })
     })
       .then(res => res.json())
-      .then(() => fetchStats())
+      .then(() => fetchStats(selectedCameraId))
       .catch(err => console.error(`Error saving ${field}:`, err));
   };
 
   const updateZonePolygon = (coords) => {
-    fetch(`${API_BASE}/api/settings`, {
+    fetch(`${API_BASE}/api/cameras/${selectedCameraId}/zone`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ zone_coords: coords })
+      body: JSON.stringify({ zone_coordinates: coords })
     })
       .then(res => res.json())
-      .then(() => fetchStats())
+      .then(() => fetchStats(selectedCameraId))
       .catch(err => console.error("Error updating boundary coordinates:", err));
   };
+
+  const openPhoneConnectModal = () => {
+    const phoneId = `phone_cam_${Date.now()}`;
+    
+    // First register the camera on the backend
+    fetch(`${API_BASE}/api/cameras`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: phoneId,
+        name: `Mobile Cam (${phoneId.substring(10)})`,
+        type: 'phone',
+        source: 'phone_stream',
+        location: 'Mobile Feed'
+      })
+    })
+      .then(res => res.json())
+      .then(() => {
+        fetchCameras();
+        setPhoneModalId(phoneId);
+        setPhoneModalActive(false);
+        setPhoneModalOpen(true);
+      })
+      .catch(err => console.error("Error auto-registering phone camera:", err));
+  };
+
+  // Poll for phone camera status in the modal
+  useEffect(() => {
+    if (!phoneModalOpen || !phoneModalId) return;
+
+    const modalInterval = setInterval(() => {
+      fetch(`${API_BASE}/api/cameras/${phoneModalId}/stats`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.is_active) {
+            setPhoneModalActive(true);
+            setSelectedCameraId(phoneModalId);
+          }
+        })
+        .catch(err => console.error("Error polling modal phone status:", err));
+    }, 1200);
+
+    return () => clearInterval(modalInterval);
+  }, [phoneModalOpen, phoneModalId]);
 
   const clearAllLogs = () => {
     if (confirm("Are you sure you want to permanently delete all logged incident history?")) {
@@ -352,13 +417,54 @@ function App() {
         <div className="dashboard-grid">
           {/* Column 1: Live Feed Terminal */}
           <div className="glass-panel camera-terminal">
-            <div className="panel-header">
-              <h3 className="panel-title">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
-                CCTV Feed // Stream
-              </h3>
+            <div className="panel-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <h3 className="panel-title" style={{ margin: 0 }}>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+                  CCTV Feed
+                </h3>
+                <select 
+                  value={selectedCameraId} 
+                  onChange={(e) => {
+                    setSelectedCameraId(e.target.value);
+                    setStreamActive(true);
+                  }}
+                  className="cyber-select"
+                  style={{
+                    background: 'rgba(15, 23, 42, 0.8)',
+                    border: '1px solid rgba(0, 176, 255, 0.25)',
+                    color: 'var(--text-main)',
+                    fontSize: '0.7rem',
+                    padding: '2px 6px',
+                    borderRadius: '4px',
+                    outline: 'none',
+                    cursor: 'pointer',
+                    height: '24px'
+                  }}
+                >
+                  {cameras.map(cam => (
+                    <option key={cam.id} value={cam.id} style={{ background: '#0f172a', color: '#f8fafc' }}>
+                      {cam.name.toUpperCase()} {cam.is_active ? '●' : '○'}
+                    </option>
+                  ))}
+                </select>
+                
+                <button 
+                  onClick={openPhoneConnectModal}
+                  className="cyber-btn"
+                  style={{
+                    fontSize: '0.65rem',
+                    padding: '2px 8px',
+                    height: '24px',
+                    background: 'rgba(0, 176, 255, 0.1)',
+                    borderColor: 'rgba(0, 176, 255, 0.3)'
+                  }}
+                >
+                  📱 Connect Phone
+                </button>
+              </div>
               <div style={{ display: 'flex', gap: '8px', fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
-                FPS: 25 // Resolution: 640x480
+                Node: {selectedCameraId.toUpperCase()}
               </div>
             </div>
             <div className="panel-content">
@@ -369,8 +475,9 @@ function App() {
                 </div>
                 {streamActive ? (
                   <img 
+                    key={selectedCameraId}
                     className="camera-feed-img" 
-                    src={`${API_BASE}/api/video_feed?t=${new Date().getTime()}`} 
+                    src={`${API_BASE}/api/cameras/${selectedCameraId}/stream?t=${new Date().getTime()}`} 
                     alt="Active Security Surveillance Feed" 
                     onError={() => setStreamActive(false)}
                   />
@@ -678,6 +785,83 @@ function App() {
                 <p className="modal-info-desc"><strong>Severity:</strong> <span className={`severity-pill ${modalLog.threat_level.toLowerCase()}`}>{modalLog.threat_level}</span></p>
                 <p className="modal-info-desc"><strong>Active Count at breach:</strong> {modalLog.crowd_count} Persons</p>
                 <p className="modal-info-time"><strong>Logged on:</strong> {modalLog.timestamp}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Phone Camera Connection Modal */}
+      {phoneModalOpen && (
+        <div className="modal-overlay" onClick={() => setPhoneModalOpen(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '400px' }}>
+            <div className="modal-hdr">
+              <h3 className="hud-font" style={{ textTransform: 'uppercase', fontSize: '0.95rem', letterSpacing: '1.5px', color: 'var(--color-primary)' }}>
+                📱 Connect Mobile Camera
+              </h3>
+              <button className="cyber-btn" style={{ padding: '4px 8px' }} onClick={() => setPhoneModalOpen(false)}>
+                Close
+              </button>
+            </div>
+            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px', padding: '24px 20px' }}>
+              <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textAlign: 'center', lineHeight: '1.4' }}>
+                Scan the QR code below on your mobile device to open the camera stream node. Ensure both devices are on the same Wi-Fi/local network.
+              </p>
+              
+              <div style={{
+                background: '#fff',
+                padding: '12px',
+                borderRadius: '8px',
+                boxShadow: '0 0 20px rgba(0, 176, 255, 0.25)',
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center'
+              }}>
+                <img 
+                  src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(`${window.location.protocol}//${window.location.hostname}${window.location.port ? ':' + window.location.port : ''}/phone-camera.html?id=${phoneModalId}`)}`}
+                  alt="Phone stream client QR Code"
+                  style={{ width: '200px', height: '200px' }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', gap: '8px', marginTop: '8px' }}>
+                <div style={{ fontSize: '0.75rem', fontWeight: 'bold', color: 'var(--text-main)', fontFamily: 'monospace' }}>
+                  NODE ID: {phoneModalId}
+                </div>
+                
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  fontSize: '0.75rem',
+                  padding: '6px 12px',
+                  background: 'rgba(0, 0, 0, 0.4)',
+                  borderRadius: '4px',
+                  border: '1px solid rgba(255, 255, 255, 0.05)',
+                  width: '100%',
+                  justifyContent: 'center'
+                }}>
+                  <span className={`status-dot ${phoneModalActive ? 'active' : ''}`} style={{
+                    width: '6px',
+                    height: '6px',
+                    borderRadius: '50%',
+                    background: phoneModalActive ? 'var(--color-low)' : '#ff9500',
+                    boxShadow: phoneModalActive ? '0 0 8px var(--color-low)' : '0 0 8px #ff9500'
+                  }}></span>
+                  <span style={{ textTransform: 'uppercase', fontWeight: 700, fontSize: '0.65rem', letterSpacing: '1px' }}>
+                    {phoneModalActive ? 'STREAMING SIGNAL DETECTED' : 'WAITING FOR SIGNAL...'}
+                  </span>
+                </div>
+
+                <button 
+                  className="cyber-btn"
+                  style={{ width: '100%', justifyContent: 'center', fontSize: '0.7rem', marginTop: '4px' }}
+                  onClick={() => {
+                    navigator.clipboard.writeText(`${window.location.protocol}//${window.location.hostname}${window.location.port ? ':' + window.location.port : ''}/phone-camera.html?id=${phoneModalId}`);
+                    alert('Stream link copied to clipboard!');
+                  }}
+                >
+                  Copy Connection URL
+                </button>
               </div>
             </div>
           </div>

@@ -16,6 +16,7 @@ const DEVICE_TYPES = [
   { value: 'usb',    label: 'USB Camera',        icon: Usb,         placeholder: '1 (device index)' },
   { value: 'ip',     label: 'Android / IP Cam',  icon: Smartphone,  placeholder: 'http://192.168.1.x:8080/video' },
   { value: 'rtsp',   label: 'RTSP / CCTV Feed',  icon: Radio,       placeholder: 'rtsp://user:pass@192.168.1.x/stream' },
+  { value: 'phone',  label: 'Phone Camera Node', icon: Smartphone,  placeholder: 'phone_stream' },
 ];
 
 const DeviceManager = ({ cameras = [], onCameraAdded, onCameraRemoved }) => {

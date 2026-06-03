@@ -20,6 +20,8 @@ import json
 import queue
 import sys
 import os
+import cv2
+import numpy as np
 
 from flask import Flask, Response, jsonify, request, send_from_directory
 from flask_cors import CORS
@@ -249,7 +251,41 @@ def camera_stats(camera_id):
     stats = detector.get_camera_stats(camera_id)
     if not stats:
         return jsonify({"error": f"Camera {camera_id} not found."}), 404
+    # Enrich stats with keys required by the frontend App.jsx
+    p = detector.get_pipeline(camera_id)
+    if p:
+        stats.update({
+            "active_unattended_objects": p.active_unattended_objects,
+            "unattended_item_counts": {k: v for k, v in p.current_item_counts.items() if v > 0} if p.active_unattended_objects > 0 else {}
+        })
     return jsonify(stats)
+
+
+@app.route('/api/cameras/<camera_id>/upload_frame', methods=['POST'])
+def upload_camera_frame(camera_id):
+    """Upload endpoint for phone cameras to push raw JPEG frames."""
+    device = detector.device_manager.get_device(camera_id)
+    if not device:
+        return jsonify({"error": f"Camera {camera_id} not registered."}), 404
+    if device.device_type != 'phone':
+        return jsonify({"error": f"Camera {camera_id} is not of type 'phone'."}), 400
+
+    img_data = request.data
+    if not img_data:
+        return jsonify({"error": "No image data sent."}), 400
+
+    try:
+        # Decode the JPEG bytes using OpenCV
+        nparr = np.frombuffer(img_data, np.uint8)
+        frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        if frame is None:
+            return jsonify({"error": "Invalid image data."}), 400
+
+        # Update the phone frame in the CameraDevice
+        device.update_phone_frame(frame)
+        return jsonify({"success": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route('/api/cameras/<camera_id>/alerts/stream')

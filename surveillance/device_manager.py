@@ -49,6 +49,16 @@ class CameraDevice:
 
     def connect(self):
         """Attempt to open the video capture source."""
+        if self.device_type == 'phone':
+            with self._lock:
+                self.cap = None
+                self.is_active = False  # Set to active once a frame is uploaded
+                self.latest_frame = None
+                self.last_seen = None
+                self.error_count = 0
+            print(f"[DeviceManager] Phone camera source '{self.name}' initialized (ID: {self.id})")
+            return True
+
         try:
             src = int(self.source) if self.device_type in ('webcam', 'usb') else self.source
             cap = cv2.VideoCapture(src)
@@ -84,9 +94,31 @@ class CameraDevice:
             self.is_active = False
         print(f"[DeviceManager] Camera '{self.name}' disconnected.")
 
+    def update_phone_frame(self, frame):
+        """Update frame received from the phone camera."""
+        with self._lock:
+            self.latest_frame = frame
+            self.is_active = True
+            self.last_seen = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            self.error_count = 0
+
     def read_frame(self):
         """Thread-safe frame read. Returns (success, frame) tuple."""
         with self._lock:
+            if self.device_type == 'phone':
+                if hasattr(self, 'latest_frame') and self.latest_frame is not None:
+                    # Mark offline if no upload in 10 seconds
+                    if self.last_seen:
+                        try:
+                            last_seen_dt = datetime.strptime(self.last_seen, '%Y-%m-%d %H:%M:%S')
+                            if (datetime.now() - last_seen_dt).total_seconds() > 10.0:
+                                self.is_active = False
+                                return False, None
+                        except Exception:
+                            pass
+                    return True, self.latest_frame
+                return False, None
+
             if self.cap is None or not self.cap.isOpened():
                 return False, None
             ret, frame = self.cap.read()

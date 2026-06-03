@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>GodsEye // Mobile Camera Node</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;800;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --color-bg: #020617;
+      --color-panel: rgba(15, 23, 42, 0.65);
+      --color-primary: #00b0ff;
+      --color-primary-glow: rgba(0, 176, 255, 0.4);
+      --color-success: #10b981;
+      --color-success-glow: rgba(16, 185, 129, 0.4);
+      --color-danger: #ef4444;
+      --color-text: #f8fafc;
+      --color-muted: #64748b;
+      --color-border: rgba(51, 65, 85, 0.5);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    body {
+      background-color: var(--color-bg);
+      color: var(--color-text);
+      font-family: 'Outfit', sans-serif;
+      height: 100vh;
+      width: 100vw;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+
+    /* Cyber grid overlay */
+    body::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background-image: 
+        linear-gradient(rgba(255, 255, 255, 0.015) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.015) 1px, transparent 1px);
+      background-size: 20px 20px;
+      pointer-events: none;
+      z-index: 1;
+    }
+
+    /* Main background video / viewfinder */
+    .viewfinder-container {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      z-index: 0;
+      background: #000;
+    }
+
+    #viewfinder {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    /* Top HUD */
+    .hud-top {
+      position: absolute;
+      top: 16px;
+      left: 16px;
+      right: 16px;
+      z-index: 10;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .brand {
+      background: var(--color-panel);
+      backdrop-filter: blur(8px);
+      border: 1px solid var(--color-border);
+      padding: 8px 12px;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .brand-icon {
+      width: 8px;
+      height: 8px;
+      background: var(--color-primary);
+      border-radius: 50%;
+      box-shadow: 0 0 8px var(--color-primary);
+      animation: pulse 1.5s infinite;
+    }
+
+    .brand-text {
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      color: #e2e8f0;
+    }
+
+    .stream-status {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--color-panel);
+      backdrop-filter: blur(8px);
+      border: 1px solid var(--color-border);
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 10px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .status-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--color-muted);
+    }
+
+    .status-dot.active {
+      background: var(--color-success);
+      box-shadow: 0 0 8px var(--color-success);
+    }
+
+    .status-dot.error {
+      background: var(--color-danger);
+      box-shadow: 0 0 8px var(--color-danger);
+    }
+
+    /* Floating telemetry info */
+    .hud-telemetry {
+      position: absolute;
+      top: 80px;
+      left: 16px;
+      z-index: 10;
+      background: rgba(15, 23, 42, 0.4);
+      backdrop-filter: blur(4px);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      border-radius: 6px;
+      padding: 8px 12px;
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 10px;
+      color: var(--color-primary);
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    /* Bottom Control Dashboard */
+    .hud-bottom {
+      position: absolute;
+      bottom: 24px;
+      left: 16px;
+      right: 16px;
+      z-index: 10;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .glass-panel {
+      background: var(--color-panel);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--color-border);
+      border-radius: 12px;
+      padding: 16px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+    }
+
+    .panel-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .camera-meta {
+      flex: 1;
+    }
+
+    .cam-id-lbl {
+      font-size: 9px;
+      text-transform: uppercase;
+      font-weight: 800;
+      color: var(--color-muted);
+      letter-spacing: 1px;
+    }
+
+    .cam-id-val {
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 14px;
+      color: var(--color-primary);
+      margin-top: 2px;
+    }
+
+    /* Cyber Button styling */
+    .btn-cyber {
+      background: rgba(0, 176, 255, 0.08);
+      border: 1px solid rgba(0, 176, 255, 0.3);
+      color: var(--color-primary);
+      padding: 10px 16px;
+      border-radius: 8px;
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .btn-cyber:active {
+      background: var(--color-primary-glow);
+      transform: scale(0.95);
+    }
+
+    .btn-action {
+      flex: 1;
+      justify-content: center;
+      padding: 14px;
+      font-size: 12px;
+      border-radius: 8px;
+      background: rgba(16, 185, 129, 0.1);
+      border: 1px solid rgba(16, 185, 129, 0.4);
+      color: var(--color-success);
+    }
+
+    .btn-action.streaming {
+      background: rgba(239, 68, 68, 0.15);
+      border: 1px solid rgba(239, 68, 68, 0.5);
+      color: var(--color-danger);
+    }
+
+    /* Warning Toast */
+    .toast {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 100;
+      background: rgba(239, 68, 68, 0.95);
+      border: 1px solid #ef4444;
+      padding: 16px 24px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: bold;
+      text-align: center;
+      max-width: 80%;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+      display: none;
+    }
+
+    @keyframes pulse {
+      0% { opacity: 0.3; }
+      50% { opacity: 1; }
+      100% { opacity: 0.3; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Viewfinder stream -->
+  <div class="viewfinder-container">
+    <video id="viewfinder" autoplay playsinline muted></video>
+  </div>
+
+  <!-- Top HUD Bar -->
+  <div class="hud-top">
+    <div class="brand">
+      <div class="brand-icon"></div>
+      <div class="brand-text">GodsEye // Node</div>
+    </div>
+    <div class="stream-status">
+      <div id="statusDot" class="status-dot"></div>
+      <span id="statusTxt">Offline</span>
+    </div>
+  </div>
+
+  <!-- Telemetry readout -->
+  <div class="hud-telemetry">
+    <div>FPS: <span id="fpsVal">0.0</span></div>
+    <div>SENT: <span id="sentVal">0</span> frames</div>
+    <div>ERRS: <span id="errsVal">0</span></div>
+    <div>RES: <span id="resVal">640x480</span></div>
+  </div>
+
+  <!-- Error Toast -->
+  <div id="errorToast" class="toast"></div>
+
+  <!-- Bottom Panel controls -->
+  <div class="hud-bottom">
+    <div class="glass-panel">
+      <div class="panel-row" style="margin-bottom: 12px;">
+        <div class="camera-meta">
+          <div class="cam-id-lbl">Active Channel Node</div>
+          <div id="camIdDisplay" class="cam-id-val">CONNECTING...</div>
+        </div>
+        <button id="btnToggleCam" class="btn-cyber">
+          <!-- Switch Cam SVG Icon -->
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 2v6h-6M3 22v-6h6M21 13a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16M3 11a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/>
+          </svg>
+          Switch
+        </button>
+      </div>
+
+      <div class="panel-row">
+        <button id="btnAction" class="btn-cyber btn-action">
+          Start Stream Feed
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Offscreen processing canvas -->
+  <canvas id="offscreenCanvas" width="640" height="480" style="display: none;"></canvas>
+
+  <script>
+    // Extract camera ID from query parameters
+    const urlParams = new URLSearchParams(window.location.search);
+    const cameraId = urlParams.get('id') || `phone_${Math.floor(Math.random() * 9000 + 1000)}`;
+    
+    document.getElementById('camIdDisplay').innerText = cameraId.toUpperCase();
+
+    // DOM Elements
+    const viewfinder = document.getElementById('viewfinder');
+    const offscreenCanvas = document.getElementById('offscreenCanvas');
+    const ctx = offscreenCanvas.getContext('2d');
+    
+    const statusDot = document.getElementById('statusDot');
+    const statusTxt = document.getElementById('statusTxt');
+    const fpsVal = document.getElementById('fpsVal');
+    const sentVal = document.getElementById('sentVal');
+    const errsVal = document.getElementById('errsVal');
+    const resVal = document.getElementById('resVal');
+    
+    const btnToggleCam = document.getElementById('btnToggleCam');
+    const btnAction = document.getElementById('btnAction');
+    const errorToast = document.getElementById('errorToast');
+
+    // Streaming State
+    let localStream = null;
+    let isStreaming = false;
+    let streamInterval = null;
+    let useFrontCamera = false;
+    
+    // Telemetry
+    let frameCount = 0;
+    let errorCount = 0;
+    let fpsCount = 0;
+    let lastFpsTime = Date.now();
+
+    // Initialize camera stream
+    async function initCamera() {
+      if (localStream) {
+        localStream.getTracks().forEach(track => track.stop());
+      }
+
+      const facingMode = useFrontCamera ? 'user' : 'environment';
+      const constraints = {
+        video: {
+          facingMode: { ideal: facingMode },
+          width: { ideal: 640 },
+          height: { ideal: 480 },
+          frameRate: { ideal: 10 }
+        },
+        audio: false
+      };
+
+      try {
+        localStream = await navigator.mediaDevices.getUserMedia(constraints);
+        viewfinder.srcObject = localStream;
+        
+        // Update resolution label once video loads
+        viewfinder.onloadedmetadata = () => {
+          resVal.innerText = `${viewfinder.videoWidth}x${viewfinder.videoHeight}`;
+          offscreenCanvas.width = viewfinder.videoWidth;
+          offscreenCanvas.height = viewfinder.videoHeight;
+        };
+        
+        hideError();
+      } catch (err) {
+        console.error('Camera access error:', err);
+        showError('CAMERA ERROR: Could not open video device. Please verify camera permissions.');
+      }
+    }
+
+    // Connect page and start rendering viewfinder immediately
+    initCamera();
+
+    // Show error toast
+    function showError(msg) {
+      errorToast.innerText = msg;
+      errorToast.style.display = 'block';
+    }
+
+    function hideError() {
+      errorToast.style.display = 'none';
+    }
+
+    // Toggle Front / Rear camera
+    btnToggleCam.addEventListener('click', () => {
+      useFrontCamera = !useFrontCamera;
+      initCamera();
+    });
+
+    // Start/Stop transmission handler
+    btnAction.addEventListener('click', () => {
+      if (isStreaming) {
+        stopStreaming();
+      } else {
+        startStreaming();
+      }
+    });
+
+    function startStreaming() {
+      if (!localStream) {
+        showError('No media stream available to capture.');
+        return;
+      }
+      isStreaming = true;
+      btnAction.innerText = 'Stop Stream Feed';
+      btnAction.classList.add('streaming');
+      
+      statusDot.className = 'status-dot active';
+      statusTxt.innerText = 'Connected';
+
+      // Set stream cycle to send frames every 150ms (~7 FPS)
+      streamInterval = setInterval(transmitFrame, 150);
+      lastFpsTime = Date.now();
+      fpsCount = 0;
+    }
+
+    function stopStreaming() {
+      isStreaming = false;
+      clearInterval(streamInterval);
+      streamInterval = null;
+      btnAction.innerText = 'Start Stream Feed';
+      btnAction.classList.remove('streaming');
+      
+      statusDot.className = 'status-dot';
+      statusTxt.innerText = 'Offline';
+      fpsVal.innerText = '0.0';
+    }
+
+    // Capture and upload frame
+    function transmitFrame() {
+      if (!localStream || viewfinder.paused || viewfinder.ended) return;
+
+      // Draw current video element frames to the offscreen canvas
+      ctx.drawImage(viewfinder, 0, 0, offscreenCanvas.width, offscreenCanvas.height);
+
+      // Compress to JPEG blob at 0.6 quality (low bandwidth, fast uploads)
+      offscreenCanvas.toBlob((blob) => {
+        if (!blob) return;
+        
+        const hostUrl = window.location.protocol.startsWith('http') ? window.location.origin : 'http://localhost:5000';
+        fetch(`${hostUrl}/api/cameras/${cameraId}/upload_frame`, {
+          method: 'POST',
+          body: blob
+        })
+        .then(res => {
+          if (!res.ok) throw new Error('Upload server rejected frame.');
+          return res.json();
+        })
+        .then(() => {
+          frameCount++;
+          fpsCount++;
+          sentVal.innerText = frameCount;
+          
+          // Calculate active FPS
+          const now = Date.now();
+          const delta = now - lastFpsTime;
+          if (delta >= 1000) {
+            fpsVal.innerText = ((fpsCount * 1000) / delta).toFixed(1);
+            fpsCount = 0;
+            lastFpsTime = now;
+          }
+          
+          statusDot.className = 'status-dot active';
+          statusTxt.innerText = 'Connected';
+          hideError();
+        })
+        .catch(err => {
+          console.error(err);
+          errorCount++;
+          errsVal.innerText = errorCount;
+          statusDot.className = 'status-dot error';
+          statusTxt.innerText = 'Link Error';
+          showError('SERVER CONNECTION ERROR: Ensure server is running and phone is on the same local network.');
+        });
+      }, 'image/jpeg', 0.6);
+    }
+  </script>
+</body>
+</html>
