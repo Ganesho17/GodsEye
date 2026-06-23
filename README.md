@@ -1,2 +1,2 @@
 # GodsEye
-Advance Monitering and Threat Detection And Prediction System
+Advance Monitering System and Threat Detection And Prediction 
